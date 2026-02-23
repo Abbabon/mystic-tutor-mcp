@@ -5,9 +5,8 @@ import type { ScryfallCard } from "../api/types.js";
 import { formatCardCompact } from "../utils/format-card.js";
 
 /**
- * Mapping from oracle text patterns to Scryfall search queries.
- * Uses otag (community-curated synergy tags) where available,
- * falls back to oracle text searches.
+ * Verified otag names from Scryfall's community tagging system.
+ * Each entry has a primary otag query and an oracle text fallback.
  */
 const SYNERGY_PATTERNS: {
   label: string;
@@ -17,66 +16,65 @@ const SYNERGY_PATTERNS: {
   {
     label: "Token Synergies",
     test: (_, text) => /\btoken/i.test(text) || /\bcreate\b/i.test(text),
-    queries: ["otag:synergy-tokens"],
+    queries: ["otag:token-doubler", 'o:"token" o:"create"'],
   },
   {
     label: "+1/+1 Counter Synergies",
-    test: (_, text) => /\+1\/\+1 counter/i.test(text),
+    test: (_, text) =>
+      /\+1\/\+1 counter/i.test(text) || /\bproliferate\b/i.test(text),
     queries: ["otag:counters-matter"],
   },
   {
     label: "Graveyard Synergies",
-    test: (_, text) =>
-      /\bgraveyard\b/i.test(text) || /\bmill\b/i.test(text),
-    queries: ["otag:graveyard-matters"],
+    test: (_, text) => /\bgraveyard\b/i.test(text),
+    queries: ["otag:death-trigger", 'o:"graveyard"'],
+  },
+  {
+    label: "Mill Synergies",
+    test: (_, text) => /\bmill\b/i.test(text),
+    queries: ["otag:mill"],
   },
   {
     label: "Sacrifice Synergies",
     test: (_, text) => /\bsacrifice\b/i.test(text),
-    queries: ["otag:sacrifice-matters"],
+    queries: ["otag:sacrifice-outlet"],
   },
   {
     label: "Lifegain Synergies",
     test: (_, text) => /\bgain.*life\b/i.test(text) || /\blifelink\b/i.test(text),
-    queries: ['otag:lifegain-matters'],
+    queries: ["otag:lifegain"],
   },
   {
-    label: "Equipment Synergies",
-    test: (card, text) =>
-      /\bequip\b/i.test(text) || card.type_line?.includes("Equipment"),
-    queries: ["otag:equipment-matters"],
-  },
-  {
-    label: "Enchantment Synergies",
-    test: (card, _) => card.type_line?.includes("Enchantment") ?? false,
-    queries: ["otag:enchantments-matter"],
-  },
-  {
-    label: "Artifact Synergies",
-    test: (card, _) =>
-      (card.type_line?.includes("Artifact") ?? false) &&
-      !(card.type_line?.includes("Equipment") ?? false),
-    queries: ["otag:artifacts-matter"],
+    label: "Blink / Flicker Synergies",
+    test: (_, text) => /\benters\b/i.test(text) && /\bbattlefield\b/i.test(text),
+    queries: ["otag:flicker"],
   },
   {
     label: "Card Draw Synergies",
     test: (_, text) => /\bdraw a card\b/i.test(text) || /\bdraw cards\b/i.test(text),
-    queries: ['o:"whenever" o:"draw"'],
+    queries: ["otag:draw"],
   },
   {
-    label: "Enters the Battlefield Synergies",
-    test: (_, text) => /\benters\b/i.test(text) && /\bbattlefield\b/i.test(text),
-    queries: ['otag:etb-matters'],
+    label: "Ramp Synergies",
+    test: (_, text) =>
+      /\bsearch your library for a.*land\b/i.test(text) || /\badd\b.*\bmana\b/i.test(text),
+    queries: ["otag:ramp"],
   },
   {
-    label: "Spell Cast Synergies",
-    test: (_, text) => /\bwhenever you cast\b/i.test(text) || /\bmagecraft\b/i.test(text),
-    queries: ['otag:spellcast-matters'],
+    label: "Landfall Synergies",
+    test: (_, text) => /\blandfall\b/i.test(text) || /\bwhenever a land enters\b/i.test(text),
+    queries: ["otag:landfall"],
   },
   {
-    label: "Planeswalker Synergies",
-    test: (card, _) => card.type_line?.includes("Planeswalker") ?? false,
-    queries: ['otag:planeswalkers-matter'],
+    label: "Enchantment Synergies",
+    test: (card, _) => card.type_line?.includes("Enchantment") ?? false,
+    queries: ['otag:enchantress', 'o:"enchantment" o:"whenever"'],
+  },
+  {
+    label: "Removal",
+    test: (_, text) =>
+      /\bdestroy target\b/i.test(text) || /\bexile target\b/i.test(text),
+    queries: ["otag:removal"],
   },
 ];
 
@@ -176,24 +174,29 @@ export function registerFindSynergies(
         lines.push(`**Format**: ${format}\n`);
 
         for (const theme of themesToSearch) {
-          const query = `${theme.queries[0]}${ciFilter} f:${format} -!"${card.name}"`;
-          try {
-            const results = await client.searchCards(query, {
-              order: "edhrec",
-            });
-            const cards = results.data.slice(0, clampedLimit);
+          let cards: ScryfallCard[] = [];
 
-            lines.push(`### ${theme.label}`);
-            if (cards.length === 0) {
-              lines.push("No results found for this theme.\n");
-            } else {
-              for (let i = 0; i < cards.length; i++) {
-                lines.push(`${i + 1}. ${formatCardCompact(cards[i])}\n`);
-              }
+          // Try each query in order until one returns results
+          for (const q of theme.queries) {
+            const query = `${q}${ciFilter} f:${format} -!"${card.name}"`;
+            try {
+              const results = await client.searchCards(query, {
+                order: "edhrec",
+              });
+              cards = results.data.slice(0, clampedLimit);
+              if (cards.length > 0) break;
+            } catch {
+              // Try next query
             }
-          } catch {
-            lines.push(`### ${theme.label}`);
-            lines.push("Search failed for this theme.\n");
+          }
+
+          lines.push(`### ${theme.label}`);
+          if (cards.length === 0) {
+            lines.push("No results found for this theme.\n");
+          } else {
+            for (let i = 0; i < cards.length; i++) {
+              lines.push(`${i + 1}. ${formatCardCompact(cards[i])}\n`);
+            }
           }
         }
 
