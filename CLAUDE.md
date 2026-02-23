@@ -2,6 +2,21 @@
 
 A Model Context Protocol (MCP) server that provides Magic: The Gathering card data via the Scryfall API.
 
+## Task Management
+
+Use `td` (sidecar) for ALL task tracking. Do NOT use built-in TaskCreate/TaskUpdate/TaskList tools.
+
+```bash
+td list                    # See open tasks
+td list --all              # Include deferred tasks
+td create "Title" -t task -p P2 -d "Description"   # Create a task
+td update <id> --status in-progress                  # Start work
+td close <id>                                        # Mark done
+td show <id>                                         # Full details
+```
+
+At session start, run `td list` to see current work. When starting a multi-step task, create td issues to track progress. When done, close them.
+
 ## Build & Run
 
 ```bash
