@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  Product: Mystic Tutor MCP — a Model Context Protocol server that provides
+  Magic: The Gathering card data via the Scryfall API.
+
+  Tech stack: TypeScript (ES2022), Node.js >=18, @modelcontextprotocol/sdk, Zod, stdio transport.
+  External dependency: Scryfall public REST API (https://api.scryfall.com), no API key required.
+
+  Key constraints:
+  - Never use console.log() — it corrupts the stdio MCP transport. Use console.error() for logging.
+  - Rate limit Scryfall requests to 100ms minimum gap.
+  - All tool responses are structured text (markdown), not JSON, for natural LLM consumption.
+  - Double-faced cards (MDFCs, transform) store oracle_text on card_faces, not the top-level card object.
+
+rules:
+  proposal:
+    - Keep proposals focused on a single capability or cross-cutting concern
+  tasks:
+    - Each task should be completable in a single tool file or module change
+    - Include the affected source file path in task descriptions
